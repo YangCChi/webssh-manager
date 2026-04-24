@@ -103,10 +103,6 @@ EOF
 chmod 600 "$INSTALL_DIR/.env"
 log "配置文件已生成"
 
-# 修改 docker-compose.yml 中的卷挂载为实际目录
-sed -i "s|webssh-data:|webssh-data:\n    driver_opts:\n      type: none\n      device: $DATA_DIR/data\n      o: bind|" \
-    "$INSTALL_DIR/docker-compose.yml" 2>/dev/null || true
-
 # 构建并启动
 cd "$INSTALL_DIR"
 $COMPOSE_CMD build
