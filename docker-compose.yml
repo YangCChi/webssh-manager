@@ -14,17 +14,13 @@ services:
       - webssh-data:/app/data
       - webssh-logs:/app/logs
     environment:
-      # ⚠️ 部署前务必修改以下三个值
       - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-this-encryption-key-in-production}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      # 会话配置
       - SESSION_KEEPALIVE_HOURS=24
       - MAX_SESSIONS_PER_USER=20
-      # 日志
       - LOG_LEVEL=INFO
-      # IP白名单（留空不限制）
       - ALLOWED_IPS=${ALLOWED_IPS:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
