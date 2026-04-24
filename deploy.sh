@@ -84,8 +84,8 @@ sed -i "s|webssh-data:|webssh-data:\n    driver_opts:\n      type: none\n      d
 
 # 构建并启动
 cd "$INSTALL_DIR"
-docker compose --env-file .env build
-docker compose --env-file .env up -d webssh
+docker compose build
+docker compose up -d webssh
 
 # 等待启动
 info "等待服务启动..."
