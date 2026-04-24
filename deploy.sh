@@ -48,7 +48,7 @@ ENCRYPTION_KEY=$(openssl rand -hex 32)
 info "安装系统依赖..."
 if command -v apt-get &>/dev/null; then
     apt-get update -qq
-    apt-get install -y -qq python3 python3-pip python3-venv nodejs npm libssl-dev 2>/dev/null
+    apt-get install -y -qq python3 python3-pip python3-venv python3-full nodejs npm libssl-dev 2>/dev/null
     log "apt 依赖安装完成"
 elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
     yum install -y python3 python3-pip nodejs npm openssl-devel 2>/dev/null || \
@@ -86,12 +86,15 @@ EOF
 chmod 600 "$INSTALL_DIR/.env"
 log "配置文件已生成"
 
-# 安装后端 Python 依赖
+# 安装后端 Python 依赖（使用 venv 避免 PEP 668 限制）
 info "安装 Python 依赖..."
 cd "$INSTALL_DIR/backend"
-pip3 install -r requirements.txt -q -i https://pypi.tuna.tsinghua.edu.cn/simple 2>/dev/null || \
-pip3 install -r requirements.txt -q
-log "Python 依赖安装完成"
+python3 -m venv "$INSTALL_DIR/backend/venv"
+source "$INSTALL_DIR/backend/venv/bin/activate"
+pip install -r requirements.txt -q -i https://pypi.tuna.tsinghua.edu.cn/simple 2>/dev/null || \
+pip install -r requirements.txt -q
+deactivate
+log "Python 依赖安装完成（venv）"
 
 # 构建前端
 info "构建前端..."
@@ -109,7 +112,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR/backend
-ExecStart=$(which python3) -m uvicorn main:app --host 0.0.0.0 --port $APP_PORT --workers 1
+ExecStart=$INSTALL_DIR/backend/venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port $APP_PORT --workers 1
 Environment=SECRET_KEY=$SECRET_KEY
 Environment=ENCRYPTION_KEY=$ENCRYPTION_KEY
 Environment=ADMIN_USERNAME=$ADMIN_USER

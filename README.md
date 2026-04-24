@@ -18,7 +18,7 @@
 | **终端美化** | xterm.js · 256色 · 4套主题 · 自定义字号 · 全屏 |
 | **安全** | JWT 认证 · 密码加密存储 · IP 白名单 · HTTPS |
 
-## 🚀 快速部署
+## 🚀 一键部署（推荐）
 
 **全程只需要 2 条命令，不需要手动编辑任何文件。**
 
@@ -27,7 +27,7 @@
 git clone https://github.com/YangCChi/webssh-manager.git
 cd webssh-manager
 
-# 2. 一键部署（会自动安装 Docker、生成密钥、构建启动）
+# 2. 一键部署（自动安装 Python/Node.js、构建前端、配置 systemd 服务）
 sudo bash deploy.sh
 ```
 
@@ -40,59 +40,15 @@ sudo bash deploy.sh
 
 > 密钥（SECRET_KEY / ENCRYPTION_KEY）由脚本自动生成，无需手动配置。
 
-### 方式二：Docker Compose 手动部署
+### 系统要求
 
-如果不想用一键脚本，也可以手动部署：
-
-```bash
-git clone https://github.com/YangCChi/webssh-manager.git
-cd webssh-manager
-
-# 1. 生成随机密钥并创建配置（自动完成，不需要 vim）
-SECRET_KEY=$(openssl rand -hex 32)
-ENCRYPTION_KEY=$(openssl rand -hex 32)
-cat > .env << EOF
-SECRET_KEY=$SECRET_KEY
-ENCRYPTION_KEY=$ENCRYPTION_KEY
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=你的密码
-PORT=8080
-EOF
-
-# 2. 启动
-docker compose up -d
-```
-
-### 方式三：启用 HTTPS + Nginx
-
-```bash
-# 将 SSL 证书放入 docker/certs/
-mkdir -p docker/certs
-cp 你的证书.pem docker/certs/cert.pem
-cp 你的私钥.pem docker/certs/key.pem
-
-# 启动（含 Nginx）
-docker compose --profile with-nginx up -d
-```
-
-### 方式四：本地开发
-
-```bash
-# 后端
-cd backend
-pip install -r requirements.txt
-python main.py
-
-# 前端（另开终端）
-cd frontend
-npm install
-npm run dev
-# 访问 http://localhost:5173
-```
+- Ubuntu / Debian / CentOS 等主流 Linux 发行版
+- root 权限
+- 需要能访问 npm 镜像源（国内已配置 npmmirror 和清华 pypi 镜像）
 
 ## ⚙️ 环境变量
 
-创建 `.env` 文件：
+部署脚本会自动生成 `.env` 文件，也可手动创建：
 
 ```env
 SECRET_KEY=your-random-secret-key-here        # JWT 签名密钥
@@ -106,6 +62,30 @@ LOG_LEVEL=INFO
 ```
 
 > ⚠️ **生产环境务必修改 SECRET_KEY 和 ENCRYPTION_KEY！**
+
+## 🛠️ 管理命令
+
+```bash
+# 查看运行状态
+systemctl status webssh-manager
+
+# 查看实时日志
+journalctl -u webssh-manager -f
+
+# 重启服务
+systemctl restart webssh-manager
+
+# 停止服务
+systemctl stop webssh-manager
+
+# 更新升级
+cd /opt/webssh-manager && git pull
+cd frontend && npm install && npm run build
+systemctl restart webssh-manager
+
+# 备份数据
+cp -r /opt/webssh-manager/backend/data ./backup-$(date +%Y%m%d)
+```
 
 ## 📂 项目结构
 
@@ -130,10 +110,6 @@ webssh-manager/
 │       ├── components/   # 通用组件
 │       ├── stores/       # Pinia 状态管理
 │       └── utils/        # 工具函数
-├── docker/
-│   └── nginx.conf        # Nginx 配置（HTTPS）
-├── Dockerfile
-├── docker-compose.yml
 └── deploy.sh             # 一键部署脚本
 ```
 
@@ -143,29 +119,25 @@ webssh-manager/
 - 平台登录使用 **bcrypt** 哈希存储密码
 - API 使用 **JWT Bearer Token** 认证，默认 7 天有效期
 - WebSocket 终端连接需通过认证后才能建立
-- 建议生产环境配置 HTTPS + Nginx
+- 建议生产环境配置 HTTPS 反向代理
 
-## 🛠️ 管理命令
+## 💻 本地开发
 
 ```bash
-# 查看运行状态
-docker compose ps
+# 后端
+cd backend
+pip install -r requirements.txt
+python main.py
 
-# 查看实时日志
-docker compose logs -f webssh
-
-# 停止服务
-docker compose down
-
-# 更新升级
-git pull && docker compose build && docker compose up -d
-
-# 备份数据
-docker cp webssh-manager:/app/data ./backup-$(date +%Y%m%d)
+# 前端（另开终端）
+cd frontend
+npm install
+npm run dev
+# 访问 http://localhost:5173
 ```
 
 ## 技术栈
 
 - **后端**: Python 3.11 · FastAPI · asyncssh · SQLAlchemy · aiosqlite
 - **前端**: Vue 3 · xterm.js · Element Plus · Pinia · Vite
-- **部署**: Docker · Docker Compose · Nginx
+- **部署**: systemd · Uvicorn · Nginx（可选反向代理）
