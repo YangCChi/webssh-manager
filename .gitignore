@@ -1,0 +1,12 @@
+data/
+logs/
+*.db
+.env
+__pycache__/
+*.pyc
+node_modules/
+frontend/dist/
+docker/certs/
+*.log
+.DS_Store
+.workbuddy/

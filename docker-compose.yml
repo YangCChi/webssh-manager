@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  webssh:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: webssh-manager:latest
+    container_name: webssh-manager
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8000"
+    volumes:
+      - webssh-data:/app/data
+      - webssh-logs:/app/logs
+    environment:
+      # ⚠️ 部署前务必修改以下三个值
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-this-encryption-key-in-production}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      # 会话配置
+      - SESSION_KEEPALIVE_HOURS=24
+      - MAX_SESSIONS_PER_USER=20
+      # 日志
+      - LOG_LEVEL=INFO
+      # IP白名单（留空不限制）
+      - ALLOWED_IPS=${ALLOWED_IPS:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - webssh-net
+
+  # 可选：Nginx 反向代理 + HTTPS（推荐生产环境启用）
+  nginx:
+    image: nginx:alpine
+    container_name: webssh-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/certs:/etc/nginx/certs:ro   # SSL 证书目录
+    depends_on:
+      - webssh
+    networks:
+      - webssh-net
+    profiles:
+      - with-nginx   # 使用: docker compose --profile with-nginx up -d
+
+volumes:
+  webssh-data:
+    driver: local
+  webssh-logs:
+    driver: local
+
+networks:
+  webssh-net:
+    driver: bridge
