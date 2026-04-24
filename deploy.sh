@@ -35,12 +35,35 @@ if ! command -v docker &> /dev/null; then
     log "Docker 安装完成"
 fi
 
-# 检查 Docker Compose
-if ! command -v docker &> /dev/null || ! docker compose version &> /dev/null; then
-    warn "Docker Compose 插件未安装..."
-    apt-get install -y docker-compose-plugin 2>/dev/null || \
-    yum install -y docker-compose-plugin 2>/dev/null || true
+# 检查 Docker Compose（兼容旧版 docker-compose 和新版 docker compose）
+COMPOSE_CMD=""
+if docker compose version &> /dev/null 2>&1; then
+    COMPOSE_CMD="docker compose"
+elif docker-compose version &> /dev/null 2>&1; then
+    COMPOSE_CMD="docker-compose"
 fi
+
+if [[ -z "$COMPOSE_CMD" ]]; then
+    warn "Docker Compose 未安装，开始安装..."
+    # 尝试安装 compose 插件
+    apt-get update -qq && apt-get install -y docker-compose-plugin 2>/dev/null || \
+    yum install -y docker-compose-plugin 2>/dev/null || true
+    # 再检查一次
+    if docker compose version &> /dev/null 2>&1; then
+        COMPOSE_CMD="docker compose"
+    elif docker-compose version &> /dev/null 2>&1; then
+        COMPOSE_CMD="docker-compose"
+    else
+        # 最后尝试 pip 安装独立版
+        pip3 install docker-compose 2>/dev/null || pip install docker-compose 2>/dev/null || true
+        if docker-compose version &> /dev/null 2>&1; then
+            COMPOSE_CMD="docker-compose"
+        else
+            err "Docker Compose 安装失败，请手动安装后重试"
+        fi
+    fi
+fi
+log "使用 Docker Compose: $COMPOSE_CMD"
 
 # 读取配置
 read -p "请输入管理员用户名 [默认: admin]: " ADMIN_USER
@@ -84,8 +107,8 @@ sed -i "s|webssh-data:|webssh-data:\n    driver_opts:\n      type: none\n      d
 
 # 构建并启动
 cd "$INSTALL_DIR"
-docker compose build
-docker compose up -d webssh
+$COMPOSE_CMD build
+$COMPOSE_CMD up -d webssh
 
 # 等待启动
 info "等待服务启动..."
@@ -122,10 +145,10 @@ echo "║  配置文件: $INSTALL_DIR/.env"
 echo "║  数据目录: $DATA_DIR"
 echo "║"
 echo "║  管理命令:"
-echo "║    启动: cd $INSTALL_DIR && docker compose up -d"
-echo "║    停止: cd $INSTALL_DIR && docker compose down"
-echo "║    日志: cd $INSTALL_DIR && docker compose logs -f"
-echo "║    更新: cd $INSTALL_DIR && git pull && docker compose build && docker compose up -d"
+echo "║    启动: cd $INSTALL_DIR && $COMPOSE_CMD up -d"
+echo "║    停止: cd $INSTALL_DIR && $COMPOSE_CMD down"
+echo "║    日志: cd $INSTALL_DIR && $COMPOSE_CMD logs -f"
+echo "║    更新: cd $INSTALL_DIR && git pull && $COMPOSE_CMD build && $COMPOSE_CMD up -d"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 warn "建议配置 HTTPS 以确保安全，参考 docker/nginx.conf"
