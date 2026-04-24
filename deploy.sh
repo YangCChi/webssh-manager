@@ -4,6 +4,7 @@ set -e
 
 INSTALL_DIR="/opt/webssh-manager"
 SERVICE_NAME="webssh-manager"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -69,7 +70,7 @@ log "Node $(node -v 2>/dev/null || echo '未知'), npm $(npm -v 2>/dev/null || e
 # 复制项目文件
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
-cp -r . "$INSTALL_DIR/"
+cp -r "$SCRIPT_DIR/." "$INSTALL_DIR/"
 cd "$INSTALL_DIR"
 
 # 生成 .env 文件
