@@ -389,13 +389,21 @@ class SSHConnection:
         if self.process and self.status == "active":
             try:
                 self.process.change_terminal_size(cols, rows)
-                # tmux 模式下额外通知 tmux 调整窗口大小
-                if self.uses_tmux and old_cols != cols:
-                    # 发送 SIGWINCH 信号让 tmux 感知新尺寸
-                    # tmux 会自动响应 PTY 的 size change，但有时需要推一下
-                    pass  # change_terminal_size 已经通过 SSH channel 完成了
             except Exception:
                 pass
+
+    async def force_redraw(self):
+        """强制 tmux 重绘屏幕（用于刷新页面后恢复显示）"""
+        if not (self.process and self.status == "active" and self.uses_tmux):
+            return
+        try:
+            # 先缩小再恢复，强制 tmux 感知尺寸变化并重绘
+            self.process.change_terminal_size(self.cols - 1, self.rows - 1)
+            await asyncio.sleep(0.05)
+            self.process.change_terminal_size(self.cols, self.rows)
+            logger.info(f"强制 tmux 重绘完成: session={self.session_id}")
+        except Exception as e:
+            logger.warning(f"强制 tmux 重绘失败: {e}")
 
     def attach_websocket(self, ws: WebSocket):
         self.websockets.add(ws)

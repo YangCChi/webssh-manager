@@ -119,17 +119,6 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         conn.attach_websocket(websocket)
         logger.info(f"WS attached: session={session_id}, status={conn.status}, websockets={len(conn.websockets)}")
         
-        # 发送历史缓冲区数据（恢复终端显示）
-        # 无论 tmux 还是非 tmux 模式都回放 buffer：
-        # - 非 tmux：buffer 是唯一的恢复来源
-        # - tmux：buffer 先回放旧数据，随后 tmux attach 的完整重绘会覆盖屏幕内容
-        replay = await conn.get_replay_data()
-        if replay:
-            logger.info(f"回放 buffer: session={session_id}, {len(replay)} 字节")
-            await websocket.send_bytes(replay)
-        else:
-            logger.info(f"无 buffer 回放: session={session_id}")
-        
         # 等待 SSH 连接完成（而不是固定 sleep）
         # 这样可以确保 tmux attach 的重绘数据已经开始发送
         if conn.status == "connecting":
@@ -139,13 +128,36 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     break
                 await asyncio.sleep(0.1)
         
-        logger.info(f"SSH 连接状态: session={session_id}, status={conn.status}, websockets={len(conn.websockets)}, uses_tmux={getattr(conn, 'uses_tmux', False)}")
+        # 回放 buffer 策略：
+        # - tmux 模式：不回放 buffer。tmux attach 会完整重绘屏幕，数据通过 _broadcast 到达。
+        #   如果回放 buffer + tmux 重绘，内容会重复。
+        # - 非 tmux 模式：回放 buffer，这是唯一的恢复来源。
+        uses_tmux = getattr(conn, 'uses_tmux', False)
+        if not uses_tmux:
+            replay = await conn.get_replay_data()
+            if replay:
+                logger.info(f"回放 buffer: session={session_id}, {len(replay)} 字节")
+                await websocket.send_bytes(replay)
+            else:
+                logger.info(f"无 buffer 回放: session={session_id}")
+        else:
+            logger.info(f"tmux 模式，跳过 buffer 回放，等待 tmux 重绘: session={session_id}")
+        
+        logger.info(f"SSH 连接状态: session={session_id}, status={conn.status}, websockets={len(conn.websockets)}, uses_tmux={uses_tmux}")
         
         await websocket.send_json({
             "type": "status",
             "status": conn.status,
             "session_id": session_id,
         })
+
+        # tmux 模式下，主动触发一次 resize 让 tmux 重绘屏幕
+        # 刷新页面后 xterm 是全新的，需要 tmux 重新发送当前屏幕内容
+        if uses_tmux and conn.status == "active":
+            try:
+                await conn.force_redraw()
+            except Exception as e:
+                logger.warning(f"触发 tmux 重绘失败: {e}")
 
         # 主消息循环
         while True:
