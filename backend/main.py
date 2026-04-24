@@ -97,17 +97,23 @@ async def health():
 
 
 # 前端静态文件（生产环境）
-static_dir = "/app/frontend/dist"
-if os.path.exists(static_dir):
-    app.mount("/assets", StaticFiles(directory=f"{static_dir}/assets"), name="assets")
-    
+_base = os.path.dirname(os.path.abspath(__file__))
+_frontend_dist = None
+for _candidate in ["/app/frontend/dist", os.path.join(_base, "..", "frontend", "dist")]:
+    if os.path.exists(_candidate):
+        _frontend_dist = _candidate
+        break
+
+if _frontend_dist:
+    app.mount("/assets", StaticFiles(directory=f"{_frontend_dist}/assets"), name="assets")
+
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         """所有非API路由都返回前端入口页面（SPA路由支持）"""
         if full_path.startswith("api/") or full_path.startswith("ws/"):
             from fastapi import HTTPException as HE
             raise HE(status_code=404)
-        return FileResponse(f"{static_dir}/index.html")
+        return FileResponse(f"{_frontend_dist}/index.html")
 
 
 if __name__ == "__main__":
