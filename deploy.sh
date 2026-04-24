@@ -81,9 +81,11 @@ SECRET_KEY=$(openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 
 # 创建目录
-mkdir -p "$INSTALL_DIR" "$DATA_DIR/data" "$DATA_DIR/logs"
+mkdir -p "$DATA_DIR/data" "$DATA_DIR/logs"
 
-# 复制项目文件
+# 复制项目文件（先清空旧文件，确保用最新代码）
+rm -rf "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
 cp -r . "$INSTALL_DIR/"
 
 # 生成 .env 文件
