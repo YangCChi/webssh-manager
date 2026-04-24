@@ -1,9 +1,8 @@
 #!/bin/bash
-# WebSSH Manager - 一键部署脚本（适用于 Linux Ubuntu/CentOS/Debian）
+# WebSSH Manager - 一键部署脚本（直接部署，无需 Docker）
 set -e
 
 INSTALL_DIR="/opt/webssh-manager"
-DATA_DIR="/data/webssh"
 SERVICE_NAME="webssh-manager"
 
 RED='\033[0;31m'
@@ -20,72 +19,21 @@ info() { echo -e "${BLUE}[i] $1${NC}"; }
 echo ""
 echo "╔══════════════════════════════════════╗"
 echo "║     WebSSH Manager 一键部署脚本       ║"
+echo "║     （直接部署模式 · 无需 Docker）     ║"
 echo "╚══════════════════════════════════════╝"
 echo ""
 
 # 检查 root
 [[ $EUID -eq 0 ]] || err "请以 root 用户运行此脚本"
 
-# 配置 Docker 镜像加速（国内服务器必需）
-mkdir -p /etc/docker
-if [[ ! -f /etc/docker/daemon.json ]] || ! grep -q "registry-mirrors" /etc/docker/daemon.json 2>/dev/null; then
-    cat > /etc/docker/daemon.json << 'DAEMON'
-{
-  "registry-mirrors": [
-    "https://docker.1ms.run",
-    "https://docker.xuanyuan.me",
-    "https://docker.m.daocloud.io"
-  ]
-}
-DAEMON
-    systemctl daemon-reload && systemctl restart docker
-    log "Docker 镜像加速已配置"
-fi
-
-# 检查 Docker
-if ! command -v docker &> /dev/null; then
-    warn "Docker 未安装，开始安装..."
-    curl -fsSL https://get.docker.com | sh || \
-    curl -fsSL https://get.docker.com | sed 's|download.docker.com|mirrors.aliyun.com/docker-ce|g' | sh
-    systemctl enable docker && systemctl start docker
-    log "Docker 安装完成"
-fi
-
-# 检查 Docker Compose（兼容旧版 docker-compose 和新版 docker compose）
-COMPOSE_CMD=""
-if docker compose version &> /dev/null 2>&1; then
-    COMPOSE_CMD="docker compose"
-elif docker-compose version &> /dev/null 2>&1; then
-    COMPOSE_CMD="docker-compose"
-fi
-
-if [[ -z "$COMPOSE_CMD" ]]; then
-    warn "Docker Compose 未安装，开始安装..."
-    # 尝试安装 compose 插件
-    apt-get update -qq && apt-get install -y docker-compose-plugin 2>/dev/null || \
-    yum install -y docker-compose-plugin 2>/dev/null || true
-    # 再检查一次
-    if docker compose version &> /dev/null 2>&1; then
-        COMPOSE_CMD="docker compose"
-    elif docker-compose version &> /dev/null 2>&1; then
-        COMPOSE_CMD="docker-compose"
-    else
-        # 最后尝试 pip 安装独立版
-        pip3 install docker-compose 2>/dev/null || pip install docker-compose 2>/dev/null || true
-        if docker-compose version &> /dev/null 2>&1; then
-            COMPOSE_CMD="docker-compose"
-        else
-            err "Docker Compose 安装失败，请手动安装后重试"
-        fi
-    fi
-fi
-log "使用 Docker Compose: $COMPOSE_CMD"
+# 停掉可能正在运行的旧服务
+systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 
 # 读取配置
 read -p "请输入管理员用户名 [默认: admin]: " ADMIN_USER
 ADMIN_USER=${ADMIN_USER:-admin}
 
-read -s -p "请输入管理员密码 [默认: 请自行设置]: " ADMIN_PWD
+read -s -p "请输入管理员密码: " ADMIN_PWD
 echo ""
 [[ -z "$ADMIN_PWD" ]] && err "管理员密码不能为空，请重新运行"
 
@@ -96,13 +44,33 @@ APP_PORT=${APP_PORT:-8080}
 SECRET_KEY=$(openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 
-# 创建目录
-mkdir -p "$DATA_DIR/data" "$DATA_DIR/logs"
+# 检测系统类型并安装依赖
+info "安装系统依赖..."
+if command -v apt-get &>/dev/null; then
+    apt-get update -qq
+    apt-get install -y -qq python3 python3-pip python3-venv nodejs npm libssl-dev 2>/dev/null
+    log "apt 依赖安装完成"
+elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
+    yum install -y python3 python3-pip nodejs npm openssl-devel 2>/dev/null || \
+    dnf install -y python3 python3-pip nodejs npm openssl-devel 2>/dev/null
+    log "yum/dnf 依赖安装完成"
+else
+    err "不支持的系统，请手动安装 python3、pip、nodejs、npm"
+fi
 
-# 复制项目文件（先清空旧文件，确保用最新代码）
+# 确保 node 和 npm 可用
+if ! command -v node &>/dev/null; then
+    warn "node 未找到，尝试通过 npm 安装..."
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - 2>/dev/null || \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>/dev/null || true
+fi
+log "Node $(node -v 2>/dev/null || echo '未知'), npm $(npm -v 2>/dev/null || echo '未知')"
+
+# 复制项目文件
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 cp -r . "$INSTALL_DIR/"
+cd "$INSTALL_DIR"
 
 # 生成 .env 文件
 cat > "$INSTALL_DIR/.env" << EOF
@@ -115,37 +83,72 @@ ADMIN_USERNAME=$ADMIN_USER
 ADMIN_PASSWORD=$ADMIN_PWD
 PORT=$APP_PORT
 EOF
-
 chmod 600 "$INSTALL_DIR/.env"
 log "配置文件已生成"
 
-# 构建并启动
-cd "$INSTALL_DIR"
-$COMPOSE_CMD build
-$COMPOSE_CMD up -d webssh
+# 安装后端 Python 依赖
+info "安装 Python 依赖..."
+cd "$INSTALL_DIR/backend"
+pip3 install -r requirements.txt -q -i https://pypi.tuna.tsinghua.edu.cn/simple 2>/dev/null || \
+pip3 install -r requirements.txt -q
+log "Python 依赖安装完成"
+
+# 构建前端
+info "构建前端..."
+cd "$INSTALL_DIR/frontend"
+npm install --registry=https://registry.npmmirror.com --silent 2>/dev/null
+npm run build --silent 2>/dev/null
+log "前端构建完成"
+
+# 创建 systemd 服务
+cat > "/etc/systemd/system/${SERVICE_NAME}.service" << SVC
+[Unit]
+Description=WebSSH Manager
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR/backend
+ExecStart=$(which python3) -m uvicorn main:app --host 0.0.0.0 --port $APP_PORT --workers 1
+Environment=SECRET_KEY=$SECRET_KEY
+Environment=ENCRYPTION_KEY=$ENCRYPTION_KEY
+Environment=ADMIN_USERNAME=$ADMIN_USER
+Environment=ADMIN_PASSWORD=$ADMIN_PWD
+Environment=PORT=$APP_PORT
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+SVC
+
+systemctl daemon-reload
+systemctl enable "$SERVICE_NAME"
+systemctl start "$SERVICE_NAME"
+log "服务已启动"
 
 # 等待启动
 info "等待服务启动..."
-for i in {1..30}; do
+for i in $(seq 1 15); do
     if curl -sf "http://localhost:$APP_PORT/api/health" &>/dev/null; then
         log "服务启动成功！"
         break
     fi
-    sleep 2
+    sleep 1
     echo -n "."
 done
 echo ""
 
-# 防火墙（可选）
-if command -v ufw &> /dev/null; then
+# 防火墙
+if command -v ufw &>/dev/null; then
     ufw allow "$APP_PORT/tcp" &>/dev/null || true
-elif command -v firewall-cmd &> /dev/null; then
+elif command -v firewall-cmd &>/dev/null; then
     firewall-cmd --permanent --add-port="$APP_PORT/tcp" &>/dev/null || true
     firewall-cmd --reload &>/dev/null || true
 fi
 
 # 获取公网 IP
-PUBLIC_IP=$(curl -sf https://api.ipify.org 2>/dev/null || curl -sf https://ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+PUBLIC_IP=$(curl -sf https://api.ipify.org 2>/dev/null || curl -sf https://ifconfig.me 2>/dev/null || echo "你的服务器IP")
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
@@ -155,14 +158,10 @@ echo "║  访问地址: http://$PUBLIC_IP:$APP_PORT"
 echo "║  用户名:   $ADMIN_USER"
 echo "║  密码:     已设置（不显示）"
 echo "║"
-echo "║  配置文件: $INSTALL_DIR/.env"
-echo "║  数据目录: $DATA_DIR"
-echo "║"
 echo "║  管理命令:"
-echo "║    启动: cd $INSTALL_DIR && $COMPOSE_CMD up -d"
-echo "║    停止: cd $INSTALL_DIR && $COMPOSE_CMD down"
-echo "║    日志: cd $INSTALL_DIR && $COMPOSE_CMD logs -f"
-echo "║    更新: cd $INSTALL_DIR && git pull && $COMPOSE_CMD build && $COMPOSE_CMD up -d"
+echo "║    查看状态: systemctl status $SERVICE_NAME"
+echo "║    查看日志: journalctl -u $SERVICE_NAME -f"
+echo "║    重启:     systemctl restart $SERVICE_NAME"
+echo "║    停止:     systemctl stop $SERVICE_NAME"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
-warn "建议配置 HTTPS 以确保安全，参考 docker/nginx.conf"
