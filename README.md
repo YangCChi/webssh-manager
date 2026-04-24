@@ -20,27 +20,47 @@
 
 ## 🚀 快速部署
 
-### 方式一：一键脚本（推荐，Linux）
+**全程只需要 2 条命令，不需要手动编辑任何文件。**
 
 ```bash
-git clone https://github.com/yourname/webssh-manager.git
+# 1. 克隆项目
+git clone https://github.com/YangCChi/webssh-manager.git
 cd webssh-manager
+
+# 2. 一键部署（会自动安装 Docker、生成密钥、构建启动）
 sudo bash deploy.sh
 ```
 
-### 方式二：Docker Compose
+脚本会提示你输入：
+- 管理员用户名（默认 `admin`，回车跳过）
+- 管理员密码（必须设置）
+- 访问端口（默认 `8080`，回车跳过）
+
+部署完成后，浏览器打开 `http://你的服务器IP:8080` 即可使用。
+
+> 密钥（SECRET_KEY / ENCRYPTION_KEY）由脚本自动生成，无需手动配置。
+
+### 方式二：Docker Compose 手动部署
+
+如果不想用一键脚本，也可以手动部署：
 
 ```bash
-# 1. 复制环境配置
-cp .env.example .env
+git clone https://github.com/YangCChi/webssh-manager.git
+cd webssh-manager
 
-# 2. 修改 .env 中的密钥和密码（重要！）
-vim .env
+# 1. 生成随机密钥并创建配置（自动完成，不需要 vim）
+SECRET_KEY=$(openssl rand -hex 32)
+ENCRYPTION_KEY=$(openssl rand -hex 32)
+cat > .env << EOF
+SECRET_KEY=$SECRET_KEY
+ENCRYPTION_KEY=$ENCRYPTION_KEY
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=你的密码
+PORT=8080
+EOF
 
-# 3. 启动
+# 2. 启动
 docker compose up -d
-
-# 访问 http://your-server:8080
 ```
 
 ### 方式三：启用 HTTPS + Nginx
@@ -48,8 +68,8 @@ docker compose up -d
 ```bash
 # 将 SSL 证书放入 docker/certs/
 mkdir -p docker/certs
-cp your_cert.pem docker/certs/cert.pem
-cp your_key.pem  docker/certs/key.pem
+cp 你的证书.pem docker/certs/cert.pem
+cp 你的私钥.pem docker/certs/key.pem
 
 # 启动（含 Nginx）
 docker compose --profile with-nginx up -d
