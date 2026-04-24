@@ -26,6 +26,22 @@ echo ""
 # 检查 root
 [[ $EUID -eq 0 ]] || err "请以 root 用户运行此脚本"
 
+# 配置 Docker 镜像加速（国内服务器必需）
+mkdir -p /etc/docker
+if [[ ! -f /etc/docker/daemon.json ]] || ! grep -q "registry-mirrors" /etc/docker/daemon.json 2>/dev/null; then
+    cat > /etc/docker/daemon.json << 'DAEMON'
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.xuanyuan.me",
+    "https://docker.m.daocloud.io"
+  ]
+}
+DAEMON
+    systemctl daemon-reload && systemctl restart docker
+    log "Docker 镜像加速已配置"
+fi
+
 # 检查 Docker
 if ! command -v docker &> /dev/null; then
     warn "Docker 未安装，开始安装..."
